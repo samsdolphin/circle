@@ -63,7 +63,7 @@ void Preplanner::init(ros::NodeHandle nh)
     pub_preplanned_path = nh.advertise<nav_msgs::Path>("preplanned_path",1);
 };
 
-FieldParams Preplanner::get_local_vsf_param_around_target(Point target_pnt)
+FieldParams Preplanner::get_local_vsf_param_around_target(Point target_pnt, Twist target_vel)
 {
     FieldParams vsf_param;    
     double lx, ly, lz;
@@ -72,9 +72,30 @@ FieldParams Preplanner::get_local_vsf_param_around_target(Point target_pnt)
     vsf_param.x0 = target_pnt.x - lx/2;
     vsf_param.y0 = target_pnt.y - ly/2;
     vsf_param.z0 = target_pnt.z;
-    vsf_param.lx = lx;
-    vsf_param.ly = ly;
-    vsf_param.lz = lz;
+    double x = target_vel.linear.x;
+    double y = target_vel.linear.y;
+    //cout<<"[Preplanner] x: "<<x<<", y: "<<y<<endl;
+    if(y>0 && atan(abs(x/y))<PI/4)
+    {
+        vsf_param.lx = lx;
+        vsf_param.ly = (1 + abs(x/y)) * 2 * params.d_trakcing_max;
+        vsf_param.lz = lz;
+        //cout<<"ly: "<<vsf_param.ly<<endl;
+    }
+    else if(x>0 && atan(abs(y/x))<PI/4)
+    {
+        vsf_param.lx = (1 + abs(y/x)) * 2 * params.d_trakcing_max;
+        vsf_param.ly = ly;
+        vsf_param.lz = lz;
+        //cout<<"lx: "<<vsf_param.lx<<endl;
+    }
+    else
+    {
+        vsf_param.lx = lx;
+        vsf_param.ly = ly;
+        vsf_param.lz = lz;
+        //cout<<"normal"<<endl;
+    }
     
     vsf_param.resolution = params.vsf_resolution;
     vsf_param.ray_stride_res = params.vsf_resolution; // not used for vsf grid 
@@ -82,20 +103,20 @@ FieldParams Preplanner::get_local_vsf_param_around_target(Point target_pnt)
     return vsf_param;
 };
 
-void Preplanner::compute_visibility_field_seq(GridField* edf_grid_ptr, vector<Point> target_pnts)
+void Preplanner::compute_visibility_field_seq(GridField* edf_grid_ptr, vector<Point> target_pnts, vector<Twist> target_vels)
 {
     vsf_field_ptr_seq.resize(target_pnts.size());
     float numeric_threshold = 1e-2;
     int t = 1;
     float max_score = -1;  // for visualization 
     // for each target pnt
-    for(auto it=target_pnts.begin(); it<target_pnts.end(); it++,t++)
+    for(auto it=target_pnts.begin(); it<target_pnts.end(); it++, t++)
     {
         // get local conservative grid map around the current target point
         //int VSF_MODE = 1;
         try
         {
-            vsf_field_ptr_seq[t-1].reset(new GridField(get_local_vsf_param_around_target(*it))); 
+            vsf_field_ptr_seq[t-1].reset(new GridField(get_local_vsf_param_around_target(*it, target_vels[t-1]))); 
         }
         catch(bool ex)
         {
@@ -128,8 +149,11 @@ void Preplanner::compute_visibility_field_seq(GridField* edf_grid_ptr, vector<Po
                     if(vs >= max_score)
                         max_score = vs;
                 }
-        cout<<"[Preplanner] nodes at time "<<t<<" are "<<vsf_field_ptr_seq[t-1].get()->saved_points.size()<<endl;
     }
+    cout<<"[Preplanner] nodes at each time are: ";
+    for(int i=0; i<4; i++)
+        cout<<vsf_field_ptr_seq[i].get()->saved_points.size()<<" ";
+    cout<<endl;
 
     // save the markers
 
@@ -178,7 +202,7 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
     di_graph = Graph();
     descriptor_map.clear();
     
-    vector<Node<Point>> prev_layer;
+    vector<Node<Point>> prev_layer, useful_layer;
     Node<Point> initial_node;
     initial_node.value = x0;
     initial_node.name = "x0";
@@ -190,6 +214,7 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
     int H = vsf_field_ptr_seq.size(); // total prediction horizon
     int N_edge = 0;
     int N_edge_sub = 0;
+    bool is_push = 0;
 
     // in case of t = 0, we don't need (just current step). 
     for(int t=1; t<H; t++)
@@ -197,7 +222,7 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
         N_edge_sub = 0;
         GridField* cur_vsf_ptr = vsf_field_ptr_seq[t].get();        
         vector<Node<Point>> cur_layer = cur_vsf_ptr->generate_node(t); // generate vector<Node<Point>> from vsf_ptr
-
+        
         for(auto it_cur=cur_layer.begin(); it_cur<cur_layer.end(); it_cur++)
         {
             // step 1:  let's register the node(pnt, name) in the current layer into graph 
@@ -207,12 +232,10 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
             descriptor_map.insert(make_pair(it_cur->name, cur_vert));
             
             // call the previous layer
-            GridField* prev_vsf_ptr = vsf_field_ptr_seq[t-1].get();                        
-            
+            GridField* prev_vsf_ptr = vsf_field_ptr_seq[t-1].get();
             // step 2: let's connect with previous layer and add edges 
             for(auto it_prev=prev_layer.begin(); it_prev<prev_layer.end(); it_prev++)
             {
-                // prev_layer 
                 Vertex_d prev_vert = descriptor_map[it_prev->name];
                 Point prev_pnt = it_prev->value;
                 Vector3f prev_vec = geo2eigen(prev_pnt);
@@ -226,14 +249,21 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
                     boost::add_edge(prev_vert, cur_vert, weight, di_graph);
                     if(weight < 1e-4)
                         ROS_WARN("weight is zero");
+                    is_push = true;
                     N_edge++;
                     N_edge_sub++;
                 }
-            }            
+            }
+            if(is_push)
+            {
+                useful_layer.push_back(*it_cur);
+                is_push = false;
+            }
         }
 
-        prev_layer = cur_layer;
-        cout<<"[Preplanner] connected edge to this layer: "<<N_edge_sub<<endl;
+        prev_layer = useful_layer;
+        cout<<"[Preplanner] connected edge: "<<N_edge_sub<<", node: "<<useful_layer.size()<<endl;
+        useful_layer.clear();
     }
     
     cout<<"[Preplanner] total number of edges "<<N_edge<<endl;
@@ -251,15 +281,15 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
         // this condition should be satisfied to be connected 
         boost::add_edge(prev_vert, vf, 0, di_graph);
     }
-}
 
+}
 VertexPath Preplanner::dijkstra(Vertex_d v0, Vertex_d vf)
 {
     // Create things for Dijkstra
     vector<Vertex_d> predecessors(boost::num_vertices(di_graph)); // To store parents
     vector<Weight> distances(boost::num_vertices(di_graph)); // To store distances
 
-    IndexMap indexMap = boost::get(boost::vertex_index, di_graph);
+    IndexMap indexMap = boost::get(boost::vertex_index, di_graph); // get property map objects from a graph
     NameMap nameMap = boost::get(boost::vertex_name, di_graph);
 
     PredecessorMap predecessorMap(&predecessors[0], indexMap);
@@ -337,13 +367,13 @@ void Preplanner::compute_shortest_path()
         ROS_WARN("[Preplanner] The preplanning couldn't be updated. (smooth planner may try to make path on old preplan.) ");
 }
 
-void Preplanner::preplan(GridField* edf_grid_ptr, vector<Point> target_pnts, Point chaser_init)
+void Preplanner::preplan(GridField* edf_grid_ptr, vector<Point> target_pnts, vector<Twist> target_vels, Point chaser_init)
 {
     // set the height of the moving target 
     for(auto it=target_pnts.begin(); it<target_pnts.end(); it++)
         it->z = params.min_z + 1e-3;
 
-    compute_visibility_field_seq(edf_grid_ptr, target_pnts);  
+    compute_visibility_field_seq(edf_grid_ptr, target_pnts, target_vels);  
     graph_construct(edf_grid_ptr, chaser_init);        
     compute_shortest_path();   
 }
