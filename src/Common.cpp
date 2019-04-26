@@ -343,7 +343,7 @@ float GridField::getRayMean(Point pnt1, Point pnt2)
         {
             if(N_count == 0)
             {
-                ROS_WARN("the ray start point is out of range, returning 0");
+                //ROS_WARN("the ray start point is out of range, returning 0");
                 return 0;
             }
             return accum_sum/N_count; // sometimes, the ray may cross out of bound (for most case because z0 >> 0)            

@@ -23,9 +23,9 @@ void SmoothPlanner::init(ros::NodeHandle nh)
     chasing_smooth_path.header.frame_id = world_frame_id;
 };
 
-void SmoothPlanner::traj_gen(TimeSeries knots,nav_msgs::Path waypoints,Twist v0,Twist a0)
+void SmoothPlanner::traj_gen(TimeSeries knots, nav_msgs::Path waypoints, Twist v0, Twist a0)
 {
-    planner.path_gen(knots,waypoints,v0,a0,option);
+    planner.path_gen(knots, waypoints, v0, a0, option);
     
     if(planner.is_spline_valid())
     {

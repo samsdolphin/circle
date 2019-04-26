@@ -15,6 +15,7 @@ void Chaser::init(ros::NodeHandle nh)
 
 bool Chaser::chase_update(GridField* edf_grid_ptr,
                           vector<Point> target_pnts,
+                          vector<Twist> target_vels,
                           Point chaser_x0,
                           Twist chaser_v0,
                           Twist chaser_a0,
@@ -24,8 +25,9 @@ bool Chaser::chase_update(GridField* edf_grid_ptr,
     
     /*--- PHASE 1 PRE-PLANNING ---*/
     ros::Time begin = ros::Time::now();
-    preplanner.preplan(edf_grid_ptr, target_pnts, chaser_x0);
+    preplanner.preplan(edf_grid_ptr, target_pnts, target_vels, chaser_x0);
     ros::Time end = ros::Time::now();
+    cout<<endl;
     cout<<"[Chaser] preplanning completed in "<<(end-begin).toSec()*1000<<"ms"<<endl;
     nav_msgs::Path waypoints = preplanner.get_preplanned_waypoints();
 

@@ -60,8 +60,11 @@ bool Wrapper::trigger_chasing(TimeSeries chasing_knots)
         chaser_init_acc = chaser.eval_acceleration(t_planning_start);
     }
 
-    // chasing policy update 
-    bool is_success = chaser.chase_update(edf_grid_ptr,target_pred_seq,chaser_init_point,chaser_init_vel,chaser_init_acc,chasing_knots);   
+    // chasing policy update
+    vector<Twist> target_vel_seq;
+    for(int i=0; i<4; i++)
+        target_vel_seq.push_back(Twist()); // TOTALLY NOT USED
+    bool is_success = chaser.chase_update(edf_grid_ptr,target_pred_seq,target_vel_seq,chaser_init_point,chaser_init_vel,chaser_init_acc,chasing_knots);   
     if(is_success) 
         objects_handler.is_path_solved = true; // at least once solved, 
 
@@ -69,7 +72,7 @@ bool Wrapper::trigger_chasing(TimeSeries chasing_knots)
 }
 
 // informative mode 
-bool Wrapper::trigger_chasing(vector<Point> target_pred_seq, TimeSeries chasing_knots)
+bool Wrapper::trigger_chasing(vector<Point> target_pt_seq, vector<Twist> target_vel_seq, TimeSeries chasing_knots)
 {
     double t_planning_start = chasing_knots(0);
 
@@ -93,7 +96,7 @@ bool Wrapper::trigger_chasing(vector<Point> target_pred_seq, TimeSeries chasing_
     }
 
     // chasing policy update 
-    bool is_success = chaser.chase_update(edf_grid_ptr, target_pred_seq, chaser_init_point, chaser_init_vel, chaser_init_acc, chasing_knots);
+    bool is_success = chaser.chase_update(edf_grid_ptr, target_pt_seq, target_vel_seq, chaser_init_point, chaser_init_vel, chaser_init_acc, chasing_knots);
 
     if(is_success) 
         objects_handler.is_path_solved = true; // at least once solved, 
