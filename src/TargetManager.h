@@ -40,6 +40,7 @@ class TargetManager
         void callback_waypoint(const geometry_msgs::PoseStampedConstPtr& waypoint);
         void clear_waypoint();
         vector<Point> eval_time_seq(VectorXd ts);
+        vector<Twist> eval_vel_seq(VectorXd ts);
         nav_msgs::Path get_global_waypoints();
         bool global_path_generate(double tf);
         void init(ros::NodeHandle nh);

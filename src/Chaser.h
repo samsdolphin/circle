@@ -18,7 +18,13 @@ class Chaser
 
         Chaser();
         void init(ros::NodeHandle nh);
-        bool chase_update(GridField* edf_grid_ptr, vector<Point> target_pnts, Point chaser_x0, Twist chaser_v0, Twist chaser_a0, TimeSeries knots); // load control point 
+        bool chase_update(GridField* edf_grid_ptr,
+                          vector<Point> target_pnts,
+                          vector<Twist> target_vels,
+                          Point chaser_x0,
+                          Twist chaser_v0,
+                          Twist chaser_a0,
+                          TimeSeries knots); // load control point 
         void session(double t); // publish information 
 
         // evaluation with current 

@@ -47,6 +47,7 @@ using namespace Eigen;
 using namespace geometry_msgs;
 
 #define GetCurrentDir getcwd
+#define PI 3.141592
 
 // get the working directory 
 std::string GetCurrentWorkingDir(void);

@@ -172,10 +172,25 @@ vector<Point> TargetManager::eval_time_seq(VectorXd ts)
     
     for (int i=0; i<ts.size(); i++)
     {
-        Point temp = planner.point_eval_spline(ts(i));
-        point_seq.push_back(temp);
-        ROS_INFO("[TargetManager] eval_point %f, %f, %f", temp.x, temp.y, temp.z);
+        Point temp_p = planner.point_eval_spline(ts(i));
+        point_seq.push_back(temp_p);
+        
+        //ROS_INFO("[TargetManager] eval_point %f, %f, %f", temp_p.x, temp_p.y, temp_p.z);
     }
 
     return point_seq;
+}
+
+vector<Twist> TargetManager::eval_vel_seq(VectorXd ts)
+{
+    vector<Twist> twist_seq;
+    
+    for (int i=0; i<ts.size(); i++)
+    {
+        Twist temp_v = planner.vel_eval_spline(ts(i));
+        twist_seq.push_back(temp_v);
+        //ROS_INFO("[TargetManager] eval_twist %f, %f, %f", temp_v.linear.x, temp_v.linear.y, temp_v.linear.z);
+    }
+
+    return twist_seq;
 }
