@@ -168,13 +168,11 @@ void Preplanner::compute_visibility_field_seq(GridField* edf_grid_ptr, vector<Po
     for(auto it=target_pnts.begin(); it<target_pnts.end(); it++,t++)
     {
         // for time
-        //int idx = 0;
         markers_visibility_field_base.ns = "time_"+to_string(t);
 
         // we draw only saved points from above 
         for(auto it_node=vsf_field_ptr_seq[t-1].get()->saved_points.begin();
             it_node<vsf_field_ptr_seq[t-1].get()->saved_points.end();
-            //it_node++,idx++)
             it_node++)
         {
             Vector3i key = vsf_field_ptr_seq[t-1].get()->getCellIdx(*it_node);
@@ -187,7 +185,6 @@ void Preplanner::compute_visibility_field_seq(GridField* edf_grid_ptr, vector<Po
 
             markers_visibility_field_base.colors.push_back(color);
             markers_visibility_field_base.points.push_back(*it_node);
-            //idx++;
         }
 
         markers_visibility_field_seq.markers.push_back(markers_visibility_field_base);
@@ -281,8 +278,8 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
         // this condition should be satisfied to be connected 
         boost::add_edge(prev_vert, vf, 0, di_graph);
     }
-
 }
+
 VertexPath Preplanner::dijkstra(Vertex_d v0, Vertex_d vf)
 {
     // Create things for Dijkstra

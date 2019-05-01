@@ -64,6 +64,7 @@ bool Wrapper::trigger_chasing(TimeSeries chasing_knots)
     vector<Twist> target_vel_seq;
     for(int i=0; i<4; i++)
         target_vel_seq.push_back(Twist()); // TOTALLY NOT USED
+    
     bool is_success = chaser.chase_update(edf_grid_ptr,target_pred_seq,target_vel_seq,chaser_init_point,chaser_init_vel,chaser_init_acc,chasing_knots);   
     if(is_success) 
         objects_handler.is_path_solved = true; // at least once solved, 
