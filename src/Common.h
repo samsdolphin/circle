@@ -21,9 +21,11 @@
 #include <octomap/octomap_types.h>
 #include <dynamicEDT3D/dynamicEDTOctomap.h>
 #include <eigen3/Eigen/Core>
+#include <eigen3/Eigen/Dense>
 
 #include <boost/config.hpp>
 #include <boost/graph/adjacency_list.hpp>
+#include <boost/graph/astar_search.hpp>
 #include <boost/graph/dijkstra_shortest_paths.hpp>
 #include <boost/graph/graph_traits.hpp>
 #include <boost/graph/iteration_macros.hpp>
@@ -60,17 +62,18 @@ typedef boost::property<boost::edge_weight_t, Weight> WeightProperty; // vertex_
 typedef boost::property<boost::vertex_name_t, Point> NameProperty; // vertex_property_type
 
 typedef boost::adjacency_list<boost::listS, boost::vecS, boost::directedS, NameProperty, WeightProperty> Graph;
-typedef boost::graph_traits<Graph>::vertex_descriptor Vertex_d; // 特征、描述符
+typedef boost::graph_traits<Graph>::vertex_descriptor Vertex; // 特征、描述符
+typedef boost::graph_traits<Graph>::edge_descriptor Edge;
 
 typedef boost::property_map<Graph, boost::vertex_index_t>::type IndexMap;
 typedef boost::property_map<Graph, boost::vertex_name_t>::type NameMap;
+typedef boost::property_map<Graph, boost::edge_weight_t>::type WeightMap;
 
-typedef boost::iterator_property_map < Vertex_d*, IndexMap, Vertex_d, Vertex_d& > PredecessorMap;
+typedef boost::iterator_property_map < Vertex*, IndexMap, Vertex, Vertex& > PredecessorMap;
 typedef boost::iterator_property_map < Weight*, IndexMap, Weight, Weight& > DistanceMap;
 typedef vector<Point> VertexPath;
 typedef string VertexName;
-typedef map<VertexName, Vertex_d> DescriptorMap;
-
+typedef map<VertexName, Vertex> DescriptorMap;
 
 /**
  * Functions 
@@ -137,7 +140,7 @@ struct GridField
     float*** field_vals;
     GridField();
     GridField(FieldParams param);
-    // ~GridField() {delete[] field_vals; std::cout<<"[Field] destructed"<<std::endl; }; // destructor 
+    ~GridField(); // destructor 
     
     // generate a set of nodes from points in the grid field. this will be used as layer in a graph  
     vector<Node<Point>> generate_node(int prefix);
