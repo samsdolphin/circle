@@ -10,7 +10,7 @@ void Preplanner::init(ros::NodeHandle nh)
     nh.param("r_safe",params.r_safe,0.5);
     nh.param("min_z",params.min_z,0.4);
     nh.param("vs_min",params.vs_min,0.3);
-    nh.param("vsf_resolution",params.vsf_resolution,0.7);
+    nh.param("vsf_resolution",params.vsf_resolution,0.5);
     nh.param("d_connect_max",params.d_connect_max,2.5);
 
     nh.param("max_tracking_distance",params.d_trakcing_max,4.0);
@@ -36,12 +36,12 @@ void Preplanner::init(ros::NodeHandle nh)
     marker_wpnts.color.b = 1.0;
     marker_wpnts.color.a = 0.3;
     marker_wpnts.pose.orientation.w = 1.0;
-    double scale = 0.08; 
+    double scale = 0.08;
     marker_wpnts.scale.x = scale;
     marker_wpnts.scale.y = scale;
     marker_wpnts.scale.z = scale;    
 
-    // vsf_grid_seq 
+    // A star
 
     // marker base
     visualization_msgs::Marker marker;
@@ -65,7 +65,7 @@ void Preplanner::init(ros::NodeHandle nh)
 
 FieldParams Preplanner::get_local_vsf_param_around_target(Point target_pnt, Twist target_vel)
 {
-    FieldParams vsf_param;    
+    FieldParams vsf_param;
     double lx, ly, lz;
     lx = ly = 4*params.d_trakcing_max;
     lz = params.d_trakcing_max * sin(params.max_azim) - params.d_trakcing_min * sin(params.min_azim);
@@ -198,6 +198,7 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
     // init graph with the initial position of chaser
     di_graph = Graph();
     descriptor_map.clear();
+    WeightMap weightmap = get(boost::edge_weight, di_graph);
     
     vector<Node<Point>> prev_layer, useful_layer;
     Node<Point> initial_node;
@@ -205,13 +206,15 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
     initial_node.name = "x0";
     prev_layer.push_back(initial_node);
     
-    Vertex_d v0 = boost::add_vertex(x0, di_graph); // Point x0 is NamePorperty of Graph
+    Vertex v0 = boost::add_vertex(x0, di_graph); // Point x0 is NamePorperty of Graph
     descriptor_map.insert(make_pair(VertexName("x0"), v0));
 
     int H = vsf_field_ptr_seq.size(); // total prediction horizon
     int N_edge = 0;
     int N_edge_sub = 0;
     bool is_push = 0;
+    Edge e;
+    bool inserted;
 
     // in case of t = 0, we don't need (just current step). 
     for(int t=1; t<H; t++)
@@ -225,7 +228,7 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
             // step 1:  let's register the node(pnt, name) in the current layer into graph 
             Point cur_pnt = it_cur->value;
             Vector3f cur_vec = geo2eigen(cur_pnt);
-            Vertex_d cur_vert = boost::add_vertex(cur_pnt, di_graph); // add vertex with vertex_property_type
+            Vertex cur_vert = boost::add_vertex(cur_pnt, di_graph); // add vertex with vertex_property_type
             descriptor_map.insert(make_pair(it_cur->name, cur_vert));
             
             // call the previous layer
@@ -233,7 +236,7 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
             // step 2: let's connect with previous layer and add edges 
             for(auto it_prev=prev_layer.begin(); it_prev<prev_layer.end(); it_prev++)
             {
-                Vertex_d prev_vert = descriptor_map[it_prev->name];
+                Vertex prev_vert = descriptor_map[it_prev->name];
                 Point prev_pnt = it_prev->value;
                 Vector3f prev_vec = geo2eigen(prev_pnt);
 
@@ -243,7 +246,9 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
                     float weight = (cur_vec-prev_vec).norm()
                                    + params.w_v * 1/sqrt(cur_vsf_ptr->getRayMean(cur_pnt, prev_pnt) * prev_vsf_ptr->getRayMean(prev_pnt, cur_pnt))
                                    + params.w_d * pow(((geo2eigen(cur_vsf_ptr->getCentre()) - cur_vec).norm() - params.d_trakcing_des), 2);                     
-                    boost::add_edge(prev_vert, cur_vert, weight, di_graph);
+                    //boost::add_edge(prev_vert, cur_vert, weight, di_graph);
+                    boost::tie(e, inserted) = boost::add_edge(prev_vert, cur_vert, di_graph);
+                    weightmap[e] = weight;
                     if(weight < 1e-4)
                         ROS_WARN("weight is zero");
                     is_push = true;
@@ -267,23 +272,25 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
 
     // graph finishing 
     GridField* prev_vsf_ptr = vsf_field_ptr_seq[H-1].get();
-    Vertex_d vf = boost::add_vertex(Point(), di_graph);
+    Vertex vf = boost::add_vertex(Point(), di_graph);
     descriptor_map.insert(make_pair(VertexName("xf"), vf));
 
     // step3 : let's connect with previous layer 
     for(auto it_prev=prev_layer.begin(); it_prev<prev_layer.end(); it_prev++)
     {
         // prev_layer 
-        Vertex_d prev_vert = descriptor_map[it_prev->name];
+        Vertex prev_vert = descriptor_map[it_prev->name];
         // this condition should be satisfied to be connected 
-        boost::add_edge(prev_vert, vf, 0, di_graph);
+        //boost::add_edge(prev_vert, vf, 0, di_graph);
+        boost::tie(e, inserted) = boost::add_edge(prev_vert, vf, di_graph);
+        weightmap[e] = 0;
     }
 }
 
-VertexPath Preplanner::dijkstra(Vertex_d v0, Vertex_d vf)
+VertexPath Preplanner::dijkstra(Vertex v0, Vertex vf)
 {
     // Create things for Dijkstra
-    vector<Vertex_d> predecessors(boost::num_vertices(di_graph)); // To store parents
+    vector<Vertex> predecessors(boost::num_vertices(di_graph)); // To store parents
     vector<Weight> distances(boost::num_vertices(di_graph)); // To store distances
 
     IndexMap indexMap = boost::get(boost::vertex_index, di_graph); // get property map objects from a graph
@@ -297,9 +304,9 @@ VertexPath Preplanner::dijkstra(Vertex_d v0, Vertex_d vf)
     typedef vector<Graph::edge_descriptor> PathType;
 
     PathType path;
-    Vertex_d v = vf; // We want to start at the destination and work our way back to the source
+    Vertex v = vf; // We want to start at the destination and work our way back to the source
 
-    for(Vertex_d u=predecessorMap[v]; // Start by setting 'u' to the destintaion node's predecessor
+    for(Vertex u=predecessorMap[v]; // Start by setting 'u' to the destintaion node's predecessor
         u!=v; // Keep tracking the path until we get to the source
         v=u, u=predecessorMap[v]) // Set the current vertex to the current predecessor, and the predecessor to one level up
     {
@@ -331,7 +338,7 @@ VertexPath Preplanner::dijkstra(Vertex_d v0, Vertex_d vf)
     {
         ROS_WARN("[Preplanner] path does not exist. returning zero length path. ");
         return VertexPath();
-    }    
+    }
 }
 
 void Preplanner::compute_shortest_path()
@@ -351,6 +358,7 @@ void Preplanner::compute_shortest_path()
 
         for(auto it=solution_seq.begin(); it<solution_seq.end(); it++)
         {
+            //cout<<"Dijkstra: "<<it->x<<" "<<it->y<<" "<<it->z<<endl;
             geometry_msgs::PoseStamped pose_stamped;
 
             pose_stamped.pose.position = *it;
@@ -369,17 +377,77 @@ void Preplanner::preplan(GridField* edf_grid_ptr, vector<Point> target_pnts, vec
     // set the height of the moving target 
     for(auto it=target_pnts.begin(); it<target_pnts.end(); it++)
         it->z = params.min_z + 1e-3;
+/*
+    compute_visibility_field_seq(edf_grid_ptr, target_pnts, target_vels);
+    ros::Time begin = ros::Time::now();
+    graph_construct(edf_grid_ptr, chaser_init);
+    ros::Time end = ros::Time::now();
+    cout<<"[Preplanner] graph_construct completed in "<<(end-begin).toSec()*1000<<"ms"<<endl;
+    compute_shortest_path();
+    ros::Time end1 = ros::Time::now();
+    cout<<"[Preplanner] compute_shortest_path completed in "<<(end1-end).toSec()*1000<<"ms"<<endl;
+*/
+    gridPathFinder grid_path_finder(16, 16, 4);
+    Vector3d global_xyz_l, global_xyz_u, start_pt, end_pt, half_side;
+    half_side << params.d_trakcing_max, params.d_trakcing_max, (params.d_trakcing_max * sin(params.max_azim) - params.d_trakcing_min * sin(params.min_azim))/2;
+    VertexPath solution_seq;
+    solution_seq.push_back(chaser_init);
 
-    compute_visibility_field_seq(edf_grid_ptr, target_pnts, target_vels);  
-    graph_construct(edf_grid_ptr, chaser_init);        
-    compute_shortest_path();   
+    for(unsigned int i = 0; i < 3; i++)
+    {
+        start_pt << target_pnts[i].x, target_pnts[i].y, target_pnts[i].z;
+        end_pt << target_pnts[i+1].x, target_pnts[i+1].y, target_pnts[i+1].z;
+
+        global_xyz_l << start_pt - half_side;
+        global_xyz_u << start_pt + half_side;
+
+        grid_path_finder.initGridMap(params.vsf_resolution, global_xyz_l, global_xyz_u);
+        
+        //cout<<"start point: "<<grid_path_finder.coord2gridIndex(start_pt).transpose()<<", "<<start_pt.transpose()<<endl;
+        //cout<<"end point: "<<grid_path_finder.coord2gridIndex(end_pt).transpose()<<", "<<end_pt.transpose()<<endl;
+
+        //begin = ros::Time::now();
+        grid_path_finder.AstarSearch(start_pt, end_pt);
+        //end = ros::Time::now();
+        //cout<<"A STAR SOLVED IN "<<(end-begin).toSec()*1000<<"ms"<<endl;
+        
+        vector<Vector3d> path = grid_path_finder.getPath();
+        //for(vector<Vector3d>::iterator it=path.begin(); it!=path.end(); it++)
+        //    cout<<"path "<<it-path.begin()<<": "<<grid_path_finder.coord2gridIndex(*it).transpose()<<", "<<(*it).transpose()<<endl;
+        unsigned int size = path.size();
+        //cout<<"want: "<<path[size-2](0)<<" "<<path[size-2](1)<<" "<<path[size-2](2)<<endl;
+        Point wayp;
+        wayp.x = path[size-2](0);
+        wayp.y = path[size-2](1);
+        wayp.z = path[size-2](2);
+        solution_seq.push_back(wayp);
+    }
+    if(solution_seq.size())
+    {
+        // from graph path to real path 
+        preplanned_path.poses.clear();
+        // marker update  
+        marker_wpnts.points.resize(solution_seq.size());
+        marker_wpnts.colors.resize(solution_seq.size());  
+
+        for(auto it=solution_seq.begin(); it<solution_seq.end(); it++)
+        {
+            geometry_msgs::PoseStamped pose_stamped;
+
+            pose_stamped.pose.position = *it;
+            preplanned_path.poses.push_back(pose_stamped);
+
+            marker_wpnts.colors.push_back(marker_wpnts.color);
+            marker_wpnts.points.push_back(*it);
+        }
+    }
 }
 
 nav_msgs::Path Preplanner::get_preplanned_waypoints() {return preplanned_path;}
 
 void Preplanner::publish()
 {
-    pub_vsf_vis.publish(markers_visibility_field_seq); // vsf seq
+    //pub_vsf_vis.publish(markers_visibility_field_seq); // vsf seq
     pub_waypoints.publish(marker_wpnts); // waypoints
     pub_preplanned_path.publish(preplanned_path); // preplanned path
 }
