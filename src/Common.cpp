@@ -134,6 +134,17 @@ GridField::GridField(FieldParams param)
     }
 };
 
+GridField::~GridField()
+{
+    for(int x=0; x<Nx; x++)
+    {
+        for(int y=0; y<Ny; y++)
+            delete [] field_vals[x][y];
+        delete [] field_vals[x];
+    }
+    delete [] field_vals;
+}
+
 vector<Node<Point>> GridField::generate_node(int prefix)
 {
     // the node names are t{prefix}n{local index}
