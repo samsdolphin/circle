@@ -6,16 +6,18 @@
 class ObjectsHandler
 {
     private:
-        /*--- ROS ---*/
+        // ROS
         ros::Publisher pub_edf;
         ros::Subscriber sub_octomap;
         ros::Subscriber sub_chaser_init_pose; // user input from rviz
         ros::Subscriber sub_chaser_control_pose; // active only run mode 0
+        ros::Subscriber sub_chaser;
         
         tf::TransformListener* tf_listener; // don't have initial copy constructor 
         tf::TransformBroadcaster* tf_talker; // chaser tf broadcast in mode 0
 
         visualization_msgs::Marker markers_edf; // Euclidean distance field
+        visualization_msgs::Marker chaser_traj;
 
         // id         
         string world_frame_id;
@@ -30,6 +32,7 @@ class ObjectsHandler
         Twist chaser_acc;
         PoseStamped target_pose;
         PoseStamped chaser_pose;
+
         DynamicEDTOctomap *edf_ptr;
         shared_ptr<GridField> edf_grid_ptr; // signed distance field
         shared_ptr<octomap::OcTree> octree_ptr;
@@ -43,7 +46,7 @@ class ObjectsHandler
         FieldParams edf_grid_params;  
 
     public:
-        //flag
+        // flag
         bool is_octomap_full = false;
         bool is_chaser_recieved = false;
         bool is_map_recieved = false;        
@@ -57,25 +60,24 @@ class ObjectsHandler
         bool is_path_solved = false;
         
         ObjectsHandler(){};
+        ObjectsHandler(ros::NodeHandle nh);
+
         void init(ros::NodeHandle nh);
         void compute_edf();
-        ObjectsHandler(ros::NodeHandle nh);
-        PoseStamped get_target_pose();
 
-        // information of chaser 
-        PoseStamped get_chaser_pose();         
-        Twist get_chaser_velocity(); 
-        Twist get_chaser_acceleration(); 
-
+        Twist get_chaser_velocity();
+        Twist get_chaser_acceleration();
         string get_world_frame_id();
-
-        octomap::OcTree* get_octree_obj_ptr(); 
-        GridField* get_edf_grid_ptr(); 
-
+        GridField* get_edf_grid_ptr();
+        PoseStamped get_target_pose();
+        PoseStamped get_chaser_pose();
+        octomap::OcTree* get_octree_obj_ptr();
+        
         void octomap_callback(const octomap_msgs::Octomap& msg);
         void chaser_spawn(PoseStamped spawn_pose);
         void callback_chaser_init_pose(const geometry_msgs::PoseStampedConstPtr& chaser_init_pose);
         void callback_chaser_control_pose(const geometry_msgs::PoseStampedConstPtr& chaser_control_pose);
+        void callback_chaser(const visualization_msgs::Marker& traj);
         void tf_update();
         void publish();
         vector<Point> get_prediction_seq();

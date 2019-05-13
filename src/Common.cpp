@@ -234,11 +234,20 @@ Vector3i GridField::getCellIdx(Point pnt)
         idx(1) = (int)(floor((pnt.y - y0)/params.resolution));
         idx(2) = (int)(floor((pnt.z - z0)/params.resolution));
     }
-    else // out of range
+    else if(z0>pnt.z)
     {
+        idx(0) = (int)(floor((pnt.x - x0)/params.resolution));
+        idx(1) = (int)(floor((pnt.y - y0)/params.resolution));
+        idx(2) = (int)(floor((z0 - z0)/params.resolution));
+    }
+    else if(zf<pnt.z)
+    {
+        idx(0) = (int)(floor((pnt.x - x0)/params.resolution));
+        idx(1) = (int)(floor((pnt.y - y0)/params.resolution));
+        idx(2) = (int)(floor((zf - z0)/params.resolution));
+    }
+    else
         idx.setConstant(-1);
-        // cout<<"[Grid field] Warnning: referencing point is out of bound."<<endl;    
-    }        
     return idx;        
 }
 

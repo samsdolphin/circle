@@ -156,7 +156,7 @@ struct GridField
     // all index along a line connecting pnt1 and pnt2 
     vector<Vector3i> getRayIdx(Point pnt1,Point pnt2);
     // this is important function: get the minimum value along the line (minimum clamped)
-    float getRayMin(Point pnt1,Point pnt2,float clamping_val);
+    float getRayMin(Point pnt1, Point pnt2, float clamping_val);
     // this is important function: get the mean value along a line (for weight)
     float getRayMean(Point pnt1,Point pnt2);
 

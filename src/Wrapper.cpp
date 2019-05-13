@@ -1,5 +1,8 @@
 #include "auto_chaser/Wrapper.h"
 
+double length = 0.0;
+Vector3d cur_point(0, 0, 0);
+
 Wrapper::Wrapper(){};
 
 void Wrapper::init(ros::NodeHandle nh)
@@ -16,6 +19,7 @@ void Wrapper::init(ros::NodeHandle nh)
 
     // only for visualization 
     pub_control_mav_vis = nh.advertise<geometry_msgs::PoseStamped>("mav_pose_desired",1);
+
     // sub classes initialization 
     objects_handler.init(nh);
     chaser.init(nh);
@@ -37,7 +41,7 @@ void Wrapper::session(double t)
 
 // chasing session called 
 bool Wrapper::trigger_chasing(TimeSeries chasing_knots)
-{    
+{
     double t_planning_start = chasing_knots(0);
 
     vector<Point> target_pred_seq = objects_handler.get_prediction_seq();
@@ -83,32 +87,33 @@ bool Wrapper::trigger_chasing(vector<Point> target_pt_seq, vector<Twist> target_
     Twist chaser_init_vel; 
     Twist chaser_init_acc;
 
-    if(not chaser.is_complete_chasing_path) // get initial start point in the first chase
+    if(not chaser.is_complete_chasing_path)
     {
+        // get initial start point in the first chase
         chaser_init_point = objects_handler.get_chaser_pose().pose.position;    
         chaser_init_vel = objects_handler.get_chaser_velocity();
         chaser_init_acc = objects_handler.get_chaser_acceleration();   
     }
-    else // get predicted chaser start point in following chase
+    else
     {
+        // get predicted chaser start point in following chase
         chaser_init_point = chaser.eval_point(t_planning_start);
         chaser_init_vel = chaser.eval_velocity(t_planning_start);
         chaser_init_acc = chaser.eval_acceleration(t_planning_start);
     }
 
-    // chasing policy update 
+    // chasing policy update
     bool is_success = chaser.chase_update(edf_grid_ptr, target_pt_seq, target_vel_seq, chaser_init_point, chaser_init_vel, chaser_init_acc, chasing_knots);
 
-    if(is_success) 
+    if(is_success)
         objects_handler.is_path_solved = true; // at least once solved, 
 
-    // chasing policy update 
+    // chasing policy update
     return is_success;
 }
 
 /**
- * @brief evalate the latest control pose from chaser 
- * 
+ * @brief evalate the latest control pose from chaser
  * @param t_eval the evaluation time 
  * @return geometry_msgs::PoseStamped the control pose for MAV 
  */
@@ -116,24 +121,25 @@ geometry_msgs::PoseStamped Wrapper::get_control_pose(double t_eval)
 {
     PoseStamped target_pose = objects_handler.get_target_pose(); // the current target pose of the latest
     PoseStamped chaser_pose = objects_handler.get_chaser_pose(); // the current chaser pose of the latest
-    //cout<<"target_pose: "<<target_pose.pose.position.x<<" "<<target_pose.pose.position.y<<endl;
     
     // decide yawing direction so that the local x-axis heads to the target 
     // For this, if the target has not been uploaded yet, then the MAV heads to the last observed target position 
     float yaw = atan2(-chaser_pose.pose.position.y+target_pose.pose.position.y, -chaser_pose.pose.position.x+target_pose.pose.position.x);
     tf::Quaternion q;
     q.setRPY(0,0,yaw);
-    q.normalize(); // to avoid the numerical error 
-    PoseStamped chaser_pose_desired;  
-    Point chaser_point_desired = chaser.get_control_point(t_eval); 
+    q.normalize(); // to avoid the numerical error
+
+    PoseStamped chaser_pose_desired;
     chaser_pose_desired.header.frame_id = objects_handler.get_world_frame_id();
-    chaser_pose_desired.pose.position = chaser_point_desired;
+    chaser_pose_desired.pose.position = chaser.get_control_point(t_eval);
     chaser_pose_desired.pose.orientation.x = q.x();
     chaser_pose_desired.pose.orientation.y = q.y();
     chaser_pose_desired.pose.orientation.z = q.z();
     chaser_pose_desired.pose.orientation.w = q.w();
+
     return chaser_pose_desired;
 }
+
 /**
  * @brief publish the control visualization (geometry_msgs) 
  * @param t_eval evaluation time 
@@ -141,7 +147,6 @@ geometry_msgs::PoseStamped Wrapper::get_control_pose(double t_eval)
 void Wrapper::pub_control_pose(double t_eval)
 {
     PoseStamped temp = get_control_pose(t_eval);
-    //cout<<"chaser_pose: "<<temp.pose.position.x<<" "<<temp.pose.position.y<<" "<<temp.pose.position.z<<endl;
     pub_control_mav_vis.publish(temp);
 }
 
@@ -159,9 +164,20 @@ void Wrapper::pub_control_traj(double t_eval)
     
     // convert the pose information into trajectory_msgs 
     Vector3d chaser_point_desired;
+    
     chaser_point_desired(0) = chaser_pose_desired.pose.position.x;
     chaser_point_desired(1) = chaser_pose_desired.pose.position.y;
     chaser_point_desired(2) = chaser_pose_desired.pose.position.z;
+
+    if(cur_point(0) != 0)
+    {
+        length += (chaser_point_desired-cur_point).norm();
+        cur_point = chaser_point_desired;
+    }
+    else
+        cur_point = chaser_point_desired;
+    if(t_eval>19.5)
+        cout<<"time: "<<t_eval<<", length: "<<length<<endl;
 
     tf::Quaternion q;
     tf::Matrix3x3 q_mat(q);

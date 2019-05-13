@@ -14,12 +14,12 @@ void TargetManager::init(ros::NodeHandle nh)
     nh.param<double>("target/w_deviation",traj_option.w_d,0.005);
     nh.param<bool>("target/is_waypoint_soft",traj_option.is_waypoint_soft,false);
     
-    nh.param("min_z",min_z,0.4);   
+    nh.param("min_z",min_z,0.4);
 
     // register 
     pub_marker_waypoints = nh.advertise<visualization_msgs::MarkerArray>("target_waypoints",1);
-    sub_waypoints = nh.subscribe("/target_waypoints",1,&TargetManager::callback_waypoint,this);
     pub_path = nh.advertise<nav_msgs::Path>("target_global_path",1);
+    sub_waypoints = nh.subscribe("/target_waypoints",1,&TargetManager::callback_waypoint,this);
     br_ptr = new tf::TransformBroadcaster();
 }
 
@@ -49,10 +49,7 @@ void TargetManager::callback_waypoint(const geometry_msgs::PoseStampedConstPtr &
         ROS_INFO(line.c_str());        
     }
     else
-    {
         ROS_WARN("[TargetManager] insertion not allowed");
-        // std::cout<<"insertion not allowed"<<std::endl;
-    }
 }
 
 bool TargetManager::global_path_generate(double total_time)
@@ -61,6 +58,7 @@ bool TargetManager::global_path_generate(double total_time)
 
     waypoints.poses = queue;
     TimeSeries knots(queue.size());
+    
     if(queue.empty())
     {
         ROS_ERROR("[TargetManager] target waypoints empty");
@@ -140,8 +138,6 @@ void TargetManager::queue_file_load(vector<geometry_msgs::PoseStamped>& waypoint
         marker.type = visualization_msgs::Marker::CUBE;
         marker.pose = it->pose;
 
-        //std::cout<< it->pose.position.x <<"\t"<< it->pose.position.y <<"\t"<<it->pose.position.z<<std::endl;
-
         float scale = 0.1;
         marker.scale.x = scale;
         marker.scale.y = scale;
@@ -159,7 +155,6 @@ void TargetManager::queue_file_load(vector<geometry_msgs::PoseStamped>& waypoint
 
 nav_msgs::Path TargetManager::get_global_waypoints()
 {
-    // let's process the heights of target 
     for(auto it=waypoints_seq.poses.begin(); it<waypoints_seq.poses.end(); it++)
         it->pose.position.z = min_z + 0.001;
         
@@ -174,8 +169,6 @@ vector<Point> TargetManager::eval_time_seq(VectorXd ts)
     {
         Point temp_p = planner.point_eval_spline(ts(i));
         point_seq.push_back(temp_p);
-        
-        //ROS_INFO("[TargetManager] eval_point %f, %f, %f", temp_p.x, temp_p.y, temp_p.z);
     }
 
     return point_seq;
@@ -189,7 +182,6 @@ vector<Twist> TargetManager::eval_vel_seq(VectorXd ts)
     {
         Twist temp_v = planner.vel_eval_spline(ts(i));
         twist_seq.push_back(temp_v);
-        //ROS_INFO("[TargetManager] eval_twist %f, %f, %f", temp_v.linear.x, temp_v.linear.y, temp_v.linear.z);
     }
 
     return twist_seq;

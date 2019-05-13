@@ -10,7 +10,7 @@
 #include <eigen3/Eigen/Dense>
 #include <vector>
 
-#define inf 999999.0
+#define INF 999999.0
 
 struct GridNode;
 typedef GridNode* GridNodePtr;
@@ -24,15 +24,15 @@ struct GridNode
    double gScore, fScore;
    GridNodePtr cameFrom;
    std::multimap<double, GridNodePtr>::iterator nodeMapIt;
-   uint8_t *occupancy;
+   //uint8_t *occupancy;
 
    GridNode(Eigen::Vector3i _index)
    {  
       id = 0;
       index = _index;
       
-      gScore = inf;
-      fScore = inf;
+      gScore = INF;
+      fScore = INF;
       cameFrom = NULL;
    }
 
@@ -42,8 +42,8 @@ struct GridNode
       index = _index;
       coord = _coord;
 
-      gScore = inf;
-      fScore = inf;
+      gScore = INF;
+      fScore = INF;
       cameFrom = NULL;
    }
 

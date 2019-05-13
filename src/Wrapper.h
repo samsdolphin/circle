@@ -1,29 +1,15 @@
-// auto chasing wrawpper 
-
 #include "auto_chaser/Chaser.h"
 #include "auto_chaser/ObjectHandler.h"
 
 class Wrapper
 {
     private:
-        /**
-         * @brief publish the control pose for UAV (trajectory_msgs)
-         */
-        ros::Publisher pub_control_mav;
+        ros::Publisher pub_control_mav; // publish the control pose for UAV (trajectory_msgs)
+        ros::Publisher pub_control_mav_vis; // publishing the control pose visualization(geometry_msgs)
+        geometry_msgs::PoseStamped control_pose_mav; // this is used just for coordinate visualization
 
-        /**
-         * @brief publishing the control pose visualization(geometry_msgs)
-         */
-        ros::Publisher pub_control_mav_vis;
-        
-        /**
-         * @brief this is used just for coordinate visualization
-         */
-        geometry_msgs::PoseStamped control_pose_mav; 
-
-    public:    
-        
-        int run_mode; // without gazebo 
+    public:
+        int run_mode; // 0 --> without gazebo 
         ObjectsHandler objects_handler;
         Chaser chaser;
 
@@ -36,5 +22,4 @@ class Wrapper
         
         void pub_control_pose(double t_eval); 
         void pub_control_traj(double t_eval);
-
 };

@@ -392,7 +392,7 @@ geometry_msgs::Twist PathPlanner::vel_eval_spline(double t_eval)
     eval_vel.linear.x=t_vec(poly_order,t_eval_norm,1).transpose()*Map<VectorXd>(spline_xyz.spline_x.poly_coeff[spline_idx].coeff.data(),poly_order+1);
     eval_vel.linear.y=t_vec(poly_order,t_eval_norm,1).transpose()*Map<VectorXd>(spline_xyz.spline_y.poly_coeff[spline_idx].coeff.data(),poly_order+1);
     eval_vel.linear.z=t_vec(poly_order,t_eval_norm,1).transpose()*Map<VectorXd>(spline_xyz.spline_z.poly_coeff[spline_idx].coeff.data(),poly_order+1);
-	
+    
     return eval_vel;
 }
 
@@ -407,7 +407,7 @@ geometry_msgs::Twist PathPlanner::accel_eval_spline(double t_eval)
     eval_acc.linear.x=t_vec(poly_order,t_eval_norm,2).transpose()*Map<VectorXd>(spline_xyz.spline_x.poly_coeff[spline_idx].coeff.data(),poly_order+1);
     eval_acc.linear.y=t_vec(poly_order,t_eval_norm,2).transpose()*Map<VectorXd>(spline_xyz.spline_y.poly_coeff[spline_idx].coeff.data(),poly_order+1);
     eval_acc.linear.z=t_vec(poly_order,t_eval_norm,2).transpose()*Map<VectorXd>(spline_xyz.spline_z.poly_coeff[spline_idx].coeff.data(),poly_order+1);
-	
+    
     return eval_acc;
 }
 
@@ -423,29 +423,6 @@ VectorXd PathPlanner::solveqp(QP_form qp_prob, bool& is_ok)
     MatrixXd Aeq = qp_prob.Aeq;
     MatrixXd beq = qp_prob.beq;
 
-    if(is_this_verbose)
-    {
-        cout<<"[PathPlanner]: Solve QP"<<endl;
-        /*
-        cout<<"Q: "<<endl;
-        cout<<Q<<endl;
-        
-        cout<<"H: "<<endl;
-        cout<<H<<endl;
-            
-        cout<<"Aineq: "<<endl;
-        cout<<Aineq<<endl;        
-
-        cout<<"bineq: "<<endl;
-        cout<<bineq<<endl;  
-
-        cout<<"Aeq: "<<endl;
-        cout<<Aeq<<endl;        
-
-        cout<<"beq: "<<endl;
-        cout<<beq<<endl;  
-        */
-    }
     USING_NAMESPACE_QPOASES;
 
     int N_var = Q.rows();
@@ -487,12 +464,12 @@ VectorXd PathPlanner::solveqp(QP_form qp_prob, bool& is_ok)
 
     int_t nWSR = 2000;
    
-	QProblem qp_obj(N_var, N_const, HST_SEMIDEF);
-    std::cout<<"hessian type: "<<qp_obj.getHessianType()<<endl;
+    QProblem qp_obj(N_var, N_const, HST_SEMIDEF);
+    //std::cout<<"hessian type: "<<qp_obj.getHessianType()<<endl;
     Options options;
-	options.printLevel = PL_LOW;
-	qp_obj.setOptions(options);
-	qp_obj.init(H_qp, g, A, NULL, NULL, lbA, ubA, nWSR);
+    options.printLevel = PL_LOW;
+    qp_obj.setOptions(options);
+    qp_obj.init(H_qp, g, A, NULL, NULL, lbA, ubA, nWSR);
 
     if(qp_obj.isInfeasible())
     {

@@ -1,5 +1,8 @@
 #include "auto_chaser/Preplanner.h"
 
+Vector3d chase_start_point(0, 0, 0);
+double clength = 0.0;
+
 Preplanner::Preplanner(){};
 
 void Preplanner::init(ros::NodeHandle nh)
@@ -7,15 +10,15 @@ void Preplanner::init(ros::NodeHandle nh)
     // preplanner params parsing 
     nh.param("w_v",params.w_v,5.0);       
     nh.param("w_d",params.w_d,1.5);            
-    nh.param("r_safe",params.r_safe,0.5);
+    nh.param("r_safe",params.r_safe,0.3);
     nh.param("min_z",params.min_z,0.4);
-    nh.param("vs_min",params.vs_min,0.3);
-    nh.param("vsf_resolution",params.vsf_resolution,0.5);
-    nh.param("d_connect_max",params.d_connect_max,2.5);
+    nh.param("vs_min",params.vs_min,0.2);
+    nh.param("vsf_resolution",params.vsf_resolution,0.25);
+    nh.param("d_connect_max",params.d_connect_max,3.0);
 
     nh.param("max_tracking_distance",params.d_trakcing_max,4.0);
     nh.param("min_tracking_distance",params.d_trakcing_min,1.0);
-    nh.param("des_tracking_distance",params.d_trakcing_des,2.5);
+    nh.param("des_tracking_distance",params.d_trakcing_des,1.0);
     nh.param("max_azim",params.max_azim,(3.141592/4));
     nh.param("min_azim",params.min_azim,(3.141592/7));
 
@@ -23,9 +26,20 @@ void Preplanner::init(ros::NodeHandle nh)
     nh.param<string>("world_frame_id",world_frame_id,"/world");
     nh.param<string>("world_frame_id",markers_visibility_field_base.header.frame_id,"/world");
     nh.param<string>("world_frame_id",preplanned_path.header.frame_id,"/world");
+    nh.param<string>("world_frame_id",chaser_path.header.frame_id,"/world");
+    //nh.param<string>("world_frame_id",chaser_traj.header.frame_id,"/world");
 
-    // marker initialize 
-    
+    //
+    chaser_traj.header.frame_id = markers_visibility_field_base.header.frame_id;
+    chaser_traj.action = visualization_msgs::Marker::ADD;
+    chaser_traj.pose.orientation.w = 1.0;
+    chaser_traj.id = 1;
+    chaser_traj.type = visualization_msgs::Marker::LINE_STRIP;
+    chaser_traj.scale.x = 0.05;
+    chaser_traj.scale.y = 0.05;
+    chaser_traj.scale.z = 0.05;
+    chaser_traj.color.r = chaser_traj.color.a = 1.0;
+
     // waypoints 
     marker_wpnts.header.frame_id = markers_visibility_field_base.header.frame_id;
     marker_wpnts.ns = "waypoints";
@@ -41,8 +55,6 @@ void Preplanner::init(ros::NodeHandle nh)
     marker_wpnts.scale.y = scale;
     marker_wpnts.scale.z = scale;    
 
-    // A star
-
     // marker base
     visualization_msgs::Marker marker;
     marker.header.frame_id = markers_visibility_field_base.header.frame_id;;
@@ -55,50 +67,32 @@ void Preplanner::init(ros::NodeHandle nh)
     marker.scale.x = params.vsf_resolution;
     marker.scale.y = params.vsf_resolution;
     marker.scale.z = params.vsf_resolution;
-    markers_visibility_field_base = marker; 
+    markers_visibility_field_base = marker;
 
     // ros initialize 
     pub_vsf_vis = nh.advertise<visualization_msgs::MarkerArray>("vsf_grid_seq",1);
-    pub_waypoints = nh.advertise<visualization_msgs::Marker>("preplanned_waypoints",1);    
+    pub_waypoints = nh.advertise<visualization_msgs::Marker>("preplanned_waypoints",1);
     pub_preplanned_path = nh.advertise<nav_msgs::Path>("preplanned_path",1);
+    pub_chaser = nh.advertise<nav_msgs::Path>("chaser_planned_path",1);
+    pub_chaser_traj = nh.advertise<visualization_msgs::Marker>("traj_viz", 1);
 };
 
 FieldParams Preplanner::get_local_vsf_param_around_target(Point target_pnt, Twist target_vel)
 {
-    FieldParams vsf_param;
-    double lx, ly, lz;
-    lx = ly = 4*params.d_trakcing_max;
-    lz = params.d_trakcing_max * sin(params.max_azim) - params.d_trakcing_min * sin(params.min_azim);
+    FieldParams vsf_param;    
+    double lx,ly,lz;
+    lx = ly = 4*params.d_trakcing_max ;
+    lz = params.d_trakcing_max * sin(params.max_azim) - params.d_trakcing_min * sin(params.min_azim) ;
+
     vsf_param.x0 = target_pnt.x - lx/2;
     vsf_param.y0 = target_pnt.y - ly/2;
     vsf_param.z0 = target_pnt.z;
-    double x = target_vel.linear.x;
-    double y = target_vel.linear.y;
-    //cout<<"[Preplanner] x: "<<x<<", y: "<<y<<endl;
-    if(y>0 && atan(abs(x/y))<PI/4)
-    {
-        vsf_param.lx = lx;
-        vsf_param.ly = (1 + abs(x/y)) * 2 * params.d_trakcing_max;
-        vsf_param.lz = lz;
-        //cout<<"ly: "<<vsf_param.ly<<endl;
-    }
-    else if(x>0 && atan(abs(y/x))<PI/4)
-    {
-        vsf_param.lx = (1 + abs(y/x)) * 2 * params.d_trakcing_max;
-        vsf_param.ly = ly;
-        vsf_param.lz = lz;
-        //cout<<"lx: "<<vsf_param.lx<<endl;
-    }
-    else
-    {
-        vsf_param.lx = lx;
-        vsf_param.ly = ly;
-        vsf_param.lz = lz;
-        //cout<<"normal"<<endl;
-    }
+    vsf_param.lx = lx;
+    vsf_param.ly = ly;
+    vsf_param.lz = lz;
     
     vsf_param.resolution = params.vsf_resolution;
-    vsf_param.ray_stride_res = params.vsf_resolution; // not used for vsf grid 
+    vsf_param.ray_stride_res =  params.vsf_resolution; // not used for vsf grid 
 
     return vsf_param;
 };
@@ -247,6 +241,7 @@ void Preplanner::graph_construct(GridField* edf_grid_ptr, Point x0)
                                    + params.w_v * 1/sqrt(cur_vsf_ptr->getRayMean(cur_pnt, prev_pnt) * prev_vsf_ptr->getRayMean(prev_pnt, cur_pnt))
                                    + params.w_d * pow(((geo2eigen(cur_vsf_ptr->getCentre()) - cur_vec).norm() - params.d_trakcing_des), 2);                     
                     //boost::add_edge(prev_vert, cur_vert, weight, di_graph);
+                    //ROS_INFO_ONCE("cur: %f, pre: %f", cur_vsf_ptr->getRayMean(cur_pnt, prev_pnt), prev_vsf_ptr->getRayMean(prev_pnt, cur_pnt));
                     boost::tie(e, inserted) = boost::add_edge(prev_vert, cur_vert, di_graph);
                     weightmap[e] = weight;
                     if(weight < 1e-4)
@@ -374,59 +369,194 @@ void Preplanner::compute_shortest_path()
 
 void Preplanner::preplan(GridField* edf_grid_ptr, vector<Point> target_pnts, vector<Twist> target_vels, Point chaser_init)
 {
-    // set the height of the moving target 
     for(auto it=target_pnts.begin(); it<target_pnts.end(); it++)
         it->z = params.min_z + 1e-3;
-/*
-    compute_visibility_field_seq(edf_grid_ptr, target_pnts, target_vels);
-    ros::Time begin = ros::Time::now();
-    graph_construct(edf_grid_ptr, chaser_init);
-    ros::Time end = ros::Time::now();
-    cout<<"[Preplanner] graph_construct completed in "<<(end-begin).toSec()*1000<<"ms"<<endl;
-    compute_shortest_path();
-    ros::Time end1 = ros::Time::now();
-    cout<<"[Preplanner] compute_shortest_path completed in "<<(end1-end).toSec()*1000<<"ms"<<endl;
-*/
-    gridPathFinder grid_path_finder(16, 16, 4);
-    Vector3d global_xyz_l, global_xyz_u, start_pt, end_pt, half_side;
-    half_side << params.d_trakcing_max, params.d_trakcing_max, (params.d_trakcing_max * sin(params.max_azim) - params.d_trakcing_min * sin(params.min_azim))/2;
-    VertexPath solution_seq;
-    solution_seq.push_back(chaser_init);
 
-    for(unsigned int i = 0; i < 3; i++)
+    ros::Time begin = ros::Time::now();
+    compute_visibility_field_seq(edf_grid_ptr, target_pnts, target_vels);
+    graph_construct(edf_grid_ptr, chaser_init);
+    compute_shortest_path();
+    ros::Time end = ros::Time::now();
+    cout<<"[Preplanner] Dijkstra completed in "<<(end-begin).toSec()*1000<<"ms"<<endl;
+
+
+    int grid_length = ceil(params.d_trakcing_max/params.vsf_resolution);
+    gridPathFinder grid_path_finder(2*grid_length, 2*grid_length);
+    Vector3d global_xyz_l, global_xyz_u, start_pt, end_pt, half_side;
+
+    half_side << params.d_trakcing_max, params.d_trakcing_max, (params.d_trakcing_max * sin(params.max_azim) - params.d_trakcing_min * sin(params.min_azim))/2;
+    unsigned int i = 0;
+
+    if(chase_start_point(0) != 0)
+        start_pt = chase_start_point;
+    else
+        start_pt << chaser_init.x, chaser_init.y, 0.4;
+    end_pt << target_pnts[i].x, target_pnts[i].y, target_pnts[i].z;
+    global_xyz_l << start_pt - half_side;
+    global_xyz_u << start_pt + half_side;
+
+    grid_path_finder.initGridMap(params.vsf_resolution, global_xyz_l, global_xyz_u);
+
+    VertexPath solution_seq;
+
+    grid_path_finder.AstarSearch(start_pt, end_pt, edf_grid_ptr);
+
+    vector<Vector3d> path = grid_path_finder.getPath();
+    unsigned int j = 0;
+    Point waypoint;
+
+    for(; j < path.size(); j++)
+        if((path[j] - end_pt).norm() <= 0.5)
+        {
+            waypoint.x = path[j](0);
+            waypoint.y = path[j](1);
+            waypoint.z = path[j](2);
+            break;
+        }
+
+    chaser_path.poses.clear();
+    tar_obs.clear();
+
+    if(path.size())
     {
-        start_pt << target_pnts[i].x, target_pnts[i].y, target_pnts[i].z;
-        end_pt << target_pnts[i+1].x, target_pnts[i+1].y, target_pnts[i+1].z;
+        for(unsigned int k = 0; k <= j; k++)
+        {
+            geometry_msgs::PoseStamped pose_stamped;
+            Point pt;
+            pt.x = path[k](0);
+            pt.y = path[k](1);
+            pt.z = path[k](2);
+            pose_stamped.pose.position = pt;
+            chaser_path.poses.push_back(pose_stamped);
+        }
+    }
+    
+    for(int m = 1; m < 4; m++)
+    {
+        gridPathFinder grid_path_finder(2*grid_length, 2*grid_length);
+
+        start_pt << waypoint.x, waypoint.y, waypoint.z;
+        end_pt << target_pnts[i+m].x, target_pnts[i+m].y, target_pnts[i+m].z;
 
         global_xyz_l << start_pt - half_side;
         global_xyz_u << start_pt + half_side;
 
         grid_path_finder.initGridMap(params.vsf_resolution, global_xyz_l, global_xyz_u);
-        
-        //cout<<"start point: "<<grid_path_finder.coord2gridIndex(start_pt).transpose()<<", "<<start_pt.transpose()<<endl;
-        //cout<<"end point: "<<grid_path_finder.coord2gridIndex(end_pt).transpose()<<", "<<end_pt.transpose()<<endl;
-
-        //begin = ros::Time::now();
-        grid_path_finder.AstarSearch(start_pt, end_pt);
-        //end = ros::Time::now();
-        //cout<<"A STAR SOLVED IN "<<(end-begin).toSec()*1000<<"ms"<<endl;
-        
+        grid_path_finder.AstarSearch(start_pt, end_pt, edf_grid_ptr);
         vector<Vector3d> path = grid_path_finder.getPath();
-        //for(vector<Vector3d>::iterator it=path.begin(); it!=path.end(); it++)
-        //    cout<<"path "<<it-path.begin()<<": "<<grid_path_finder.coord2gridIndex(*it).transpose()<<", "<<(*it).transpose()<<endl;
-        unsigned int size = path.size();
-        //cout<<"want: "<<path[size-2](0)<<" "<<path[size-2](1)<<" "<<path[size-2](2)<<endl;
-        Point wayp;
-        wayp.x = path[size-2](0);
-        wayp.y = path[size-2](1);
-        wayp.z = path[size-2](2);
-        solution_seq.push_back(wayp);
+
+        for(j = 0; j < path.size(); j++)
+            if((path[j] - end_pt).norm() <= 0.5)
+            {
+                waypoint.x = path[j](0);
+                waypoint.y = path[j](1);
+                waypoint.z = path[j](2);
+                break;
+            }
+
+        if(path.size())
+        {
+            for(unsigned int k = 0; k < j; k++)
+            {
+                geometry_msgs::PoseStamped pose_stamped;
+                Point pt;
+                pt.x = path[k](0);
+                pt.y = path[k](1);
+                pt.z = path[k](2);
+                pose_stamped.pose.position = pt;
+                chaser_path.poses.push_back(pose_stamped);
+            }
+            if(m == 3)
+            {
+                geometry_msgs::PoseStamped pose_stamped;
+                Point pt;
+                pt.x = path[j](0);
+                pt.y = path[j](1);
+                pt.z = path[j](2);
+                pose_stamped.pose.position = pt;
+                chaser_path.poses.push_back(pose_stamped);
+            }
+        }
     }
+    
+    Vector3d temp_pt;
+    double time;
+    for(int k = 0; k < chaser_path.poses.size(); k++)
+    {
+        if(k == 0)
+        {
+            Vector3d pt(chaser_path.poses[k].pose.position.x, chaser_path.poses[k].pose.position.y, chaser_path.poses[k].pose.position.z);
+            time = 0;
+            temp_pt = pt;
+            tar_obs.push_back(make_pair(time, pt));
+        }
+        if(k%3 == 0 && k > 0 && k+3 <= chaser_path.poses.size())
+        {
+            double px = chaser_path.poses[k].pose.position.x + chaser_path.poses[k+1].pose.position.x + chaser_path.poses[k+2].pose.position.x;
+            double py = chaser_path.poses[k].pose.position.y + chaser_path.poses[k+1].pose.position.y + chaser_path.poses[k+2].pose.position.y;
+            double pz = chaser_path.poses[k].pose.position.z + chaser_path.poses[k+1].pose.position.z + chaser_path.poses[k+2].pose.position.z;
+            Vector3d pt(px/3, py/3, pz/3);
+            time += (pt-temp_pt).norm();
+            temp_pt = pt;
+            tar_obs.push_back(make_pair(time, pt));
+        }
+        if(k+3 > chaser_path.poses.size()-1)
+        {
+            k = chaser_path.poses.size() - 1;
+            Vector3d pt(chaser_path.poses[k].pose.position.x, chaser_path.poses[k].pose.position.y, chaser_path.poses[k].pose.position.z);
+            time += (pt-temp_pt).norm();
+            tar_obs.push_back(make_pair(time, pt));
+        }
+    }
+
+    VectorXd coef = estimate_T(tar_obs);
+    double t_lm = 1*(tar_obs.back().first-tar_obs.front().first);
+    //cout<<"coef: "<<coef.transpose()<<endl;
+    //cout<<"t_lm: "<<t_lm<<endl;
+
+    Point parent;
+    Vector3d cur_pt(0,0,0);
+    Matrix<double, 1, 6> t_p;
+    t_p << 1, t_lm, pow(t_lm, 2), pow(t_lm, 3), pow(t_lm, 4), pow(t_lm, 5);
+    parent.x = t_p*coef.segment<6>(0);
+    parent.y = t_p*coef.segment<6>(6);
+    parent.z = t_p*coef.segment<6>(12);
+    chase_start_point << parent.x, parent.y, parent.z;
+    int ste = 0;
+    
+    for(double dT=0; dT<t_lm*1.001; dT+=t_lm/20)
+    {
+        Matrix<double, 1, 6> t_p;
+        t_p << 1, dT, pow(dT, 2), pow(dT, 3), pow(dT, 4), pow(dT, 5);
+        parent.x = t_p*coef.segment<6>(0);
+        parent.y = t_p*coef.segment<6>(6);
+        parent.z = t_p*coef.segment<6>(12);
+        /*
+        if(ste<12)
+            parent.z = coef(ste);
+        if(ste==12)
+            parent.z = t_lm;
+        */
+        if(cur_pt(0)!=0)
+        {
+            clength += sqrt(pow(cur_pt(0)-parent.x,2)+pow(cur_pt(1)-parent.y,2));
+            cur_pt << parent.x, parent.y, parent.z;
+        }
+        else
+            cur_pt << parent.x, parent.y, parent.z;
+        chaser_traj.points.push_back(parent);
+        ste++;
+    }
+    //cout<<"clength: "<<clength<<endl;
+    pub_chaser_traj.publish(chaser_traj);
+    chaser_traj.points.clear();
+
+    pub_chaser.publish(chaser_path);
+/*
     if(solution_seq.size())
     {
-        // from graph path to real path 
+        cout<<"solution_seq: "<<solution_seq.size()<<endl;
         preplanned_path.poses.clear();
-        // marker update  
         marker_wpnts.points.resize(solution_seq.size());
         marker_wpnts.colors.resize(solution_seq.size());  
 
@@ -441,13 +571,128 @@ void Preplanner::preplan(GridField* edf_grid_ptr, vector<Point> target_pnts, vec
             marker_wpnts.points.push_back(*it);
         }
     }
+*/
 }
 
 nav_msgs::Path Preplanner::get_preplanned_waypoints() {return preplanned_path;}
 
 void Preplanner::publish()
 {
-    //pub_vsf_vis.publish(markers_visibility_field_seq); // vsf seq
+    pub_vsf_vis.publish(markers_visibility_field_seq); // vsf seq
     pub_waypoints.publish(marker_wpnts); // waypoints
     pub_preplanned_path.publish(preplanned_path); // preplanned path
+}
+
+VectorXd Preplanner::estimate_T(const list<pair<double, Vector3d>> &tar_ob)
+{
+    int _NUM_P = tar_ob.size();
+    VectorXd coef, _coef, _P;
+    double t_start = 0.0;
+    double t_lm = 0.0;
+    _P = VectorXd::Zero(3*_NUM_P);
+    MatrixXd _T = MatrixXd::Zero(3*_NUM_P, 18);
+    MatrixXd _t = MatrixXd::Zero(1, 6);
+    MatrixXd __T = MatrixXd::Zero(18, 18);
+    MatrixXd __t = MatrixXd::Zero(4, 4);
+    MatrixXd _para = MatrixXd::Zero(4, 4);
+    t_start = tar_ob.front().first;
+    t_lm = 2*(tar_ob.back().first-tar_ob.front().first);
+
+    __t << 4, 6, 8, 10,
+           6, 12, 18, 24,
+           8, 18, 28.8, 40,
+           10, 24, 40, 57.1429;
+
+    _para << t_lm, pow(t_lm, 2), pow(t_lm, 3), pow(t_lm, 4),
+             pow(t_lm, 2), pow(t_lm, 3), pow(t_lm, 4), pow(t_lm, 5),
+             pow(t_lm, 3), pow(t_lm, 4), pow(t_lm, 5), pow(t_lm, 6),
+             pow(t_lm, 4), pow(t_lm, 5), pow(t_lm, 6), pow(t_lm, 7);
+
+    for (int i=0; i<3; i++)
+        __T.block<4, 4>(6*i+2, 6*i+2) = __t.cwiseProduct(_para);
+
+    for (list<pair<double, Vector3d>>::const_iterator it=tar_ob.begin(), end=tar_ob.end() ; it!=end; ++it)
+    {
+        double dT = it->first-t_start;
+        int i = distance(tar_ob.begin(), it);
+
+        _t << 1, pow(dT, 1), pow(dT, 2), pow(dT, 3), pow(dT, 4), pow(dT, 5);
+        _T.block<1, 6>(3*i, 0) = _t;
+        _T.block<1, 6>(3*i+1, 6) = _t;
+        _T.block<1, 6>(3*i+2, 12) = _t;
+        _P.segment<3>(3*i) = it->second;
+    }
+
+    int nx = 18;
+    int my = 0;
+    int mz = 0;
+    int nnzA = 0;
+    int nnzC = 0;
+    int nnzQ = 0;
+    int irowA[my], jcolA[my], irowC[mz], jcolC[mz];
+    double dA[my], bA[my], dC[mz];
+
+    double c[nx];
+    VectorXd vtemp;
+    vtemp = -_T.transpose()*_P;
+    for (int i=0; i<nx; i++)
+        c[i] = vtemp(i);
+    MatrixXd _Q = MatrixXd::Zero(18, 18);
+    _Q = _T.transpose()*_T+0.1*__T;
+
+    vector<pair<pair<int, int>, double> > tmp;
+    for (int i=0; i<_Q.rows(); i++)
+        for (int j=0; j<_Q.cols(); j++)
+            if (j<=i && _Q(i, j)>1e-2)
+                nnzQ++;
+
+    int irowQ[nnzQ], jcolQ[nnzQ], i_q = 0;
+    double dQ[nnzQ];
+
+    tmp.resize(nnzQ);
+    for (int i=0; i<_Q.rows(); i++)
+        for (int j=0; j<_Q.cols(); j++)
+            if (j<=i && _Q(i, j)>1e-2)
+                tmp[i_q++] = make_pair(make_pair(i, j), _Q(i, j));
+
+    sort(tmp.begin(), tmp.end());
+
+    for (unsigned int i=0; i<tmp.size(); ++i)
+    {
+        irowQ[i] = tmp[i].first.first;
+        jcolQ[i] = tmp[i].first.second;
+        dQ[i] = tmp[i].second;
+    }
+
+    double xupp[nx];
+    char ixupp[nx];
+    for (int i = 0 ; i < nx; i++)
+        xupp[i] = 0.0;
+    memset(ixupp, 0, sizeof(ixupp));
+
+    double xlow[nx];    
+    char ixlow[nx];
+    for (int i = 0; i < nx; i++)
+        xlow[i] = 0.0;
+    memset(ixlow, 0, sizeof(ixlow));
+
+    QpGenSparseMa27 *qp = new QpGenSparseMa27(nx, my, mz, nnzQ, nnzA, nnzC);
+    QpGenData *prob = (QpGenData*)qp->copyDataFromSparseTriple(c, irowQ, nnzQ, jcolQ, dQ,
+                                                               xlow, ixlow, xupp, ixupp,
+                                                               irowA, nnzA, jcolA, dA, bA,
+                                                               irowC, nnzC, jcolC, dC,
+                                                               xlow, ixlow, xupp, ixupp);
+    QpGenVars *vars = (QpGenVars*) qp->makeVariables(prob);
+    QpGenResiduals *resid = (QpGenResiduals*) qp->makeResiduals(prob);
+    GondzioSolver *s = new GondzioSolver(qp, prob);
+    //s->monitorSelf();
+    int status = s->solve(prob, vars, resid);
+    delete s;
+    delete qp;
+    coef = VectorXd::Zero(nx);
+    double d[nx];
+    vars->x->copyIntoArray(d);
+    for (int i=0; i<nx; i++)
+        coef(i) = d[i];
+    return coef;
 }

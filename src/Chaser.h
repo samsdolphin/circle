@@ -6,8 +6,8 @@ class Chaser
     private:
         Preplanner preplanner;
         SmoothPlanner smooth_planner;
-        // we will get them from parameter handle
-        double spawn_x, spawn_y, hovering_z;
+        
+        double spawn_x, spawn_y, hovering_z; // we will get them from parameter handle
 
         // subroutines
         void preplan();

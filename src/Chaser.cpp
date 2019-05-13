@@ -80,11 +80,12 @@ Twist Chaser::eval_acceleration(double t_eval)
  * @return Point the control point 
  */
 Point Chaser::get_control_point(double t_eval)
-{    
+{
     if(this->is_complete_chasing_path)
         return smooth_planner.planner.point_eval_spline(t_eval); 
     else
-    {// hovering command at the spawning position with desired height      
+    {
+        // hovering command at the spawning position with desired height      
         Point hovering_point;
         hovering_point.x = spawn_x;
         hovering_point.y = spawn_y;

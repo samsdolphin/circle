@@ -1,5 +1,19 @@
 #include "auto_chaser/ObjectHandler.h"
 
+double ct_distance = 0.0;
+double cct_distance = 0.0;
+double ct_vis = 0.0;
+double cct_vis = 0.0;
+double t_lm = 0.0;
+int cd_count = 0;
+bool is_c_init = false;
+bool is_moving = false;
+bool is_chaser = false;
+Vector3d orig(0,0,0);
+ros::Time t_move;
+ros::Time t_begin;
+VectorXd coef = VectorXd::Zero(12);
+
 ObjectsHandler::ObjectsHandler(ros::NodeHandle nh){};
 
 void ObjectsHandler::init(ros::NodeHandle nh)
@@ -12,7 +26,7 @@ void ObjectsHandler::init(ros::NodeHandle nh)
     // for chaser spawning 
      
     // edf grid param
-    nh.param("min_z",min_z,0.4);   
+    nh.param("min_z",min_z,1.0);   
     nh.param("chaser_init_z",chaser_init_z,1.0);             
     nh.param("edf_max_dist",edf_max_dist,2.0);  
     nh.param("edf_max_plot_dist",edf_max_viz_dist,0.5);  
@@ -49,7 +63,8 @@ void ObjectsHandler::init(ros::NodeHandle nh)
         sub_octomap = nh.subscribe("/octomap_binary",1,&ObjectsHandler::octomap_callback,this);   
 
     sub_chaser_init_pose = nh.subscribe("/chaser_init_pose",1,&ObjectsHandler::callback_chaser_init_pose,this);
-    sub_chaser_control_pose = nh.subscribe("mav_pose_desired",1,&ObjectsHandler::callback_chaser_control_pose,this);
+    sub_chaser_control_pose = nh.subscribe("/mav_pose_desired",1,&ObjectsHandler::callback_chaser_control_pose,this);
+    sub_chaser = nh.subscribe("/auto_chaser/traj_viz",1,&ObjectsHandler::callback_chaser,this);
     
     cout<<"[ObjectHandler] Object handler initialized"<<endl; 
 }
@@ -95,6 +110,7 @@ void ObjectsHandler::octomap_callback(const octomap_msgs::Octomap& msg)
         compute_edf();
 
         is_map_recieved = true;
+        t_begin = ros::Time::now();
     }
 };
 
@@ -164,7 +180,7 @@ void ObjectsHandler::tf_update()
         // target to be listened and chaser to be broadcast  
 
         // 1) target tf listen from target manager  
-        tf::StampedTransform transform;    
+        tf::StampedTransform transform;
         try
         {
             tf_listener->lookupTransform(world_frame_id, target_frame_id, ros::Time(0), transform);
@@ -201,13 +217,59 @@ void ObjectsHandler::tf_update()
             
             transform.setOrigin(tf::Vector3(chaser_pose.pose.position.x,chaser_pose.pose.position.y,chaser_pose.pose.position.z));
             transform.setRotation(q);
-            tf_talker->sendTransform(tf::StampedTransform(transform,ros::Time::now(),world_frame_id,chaser_frame_id));        
+            tf_talker->sendTransform(tf::StampedTransform(transform,ros::Time::now(),world_frame_id,chaser_frame_id));
+            
+            
+            /*
+            Vector3d cp(chaser_pose.pose.position.x, chaser_pose.pose.position.y, target_pose.pose.position.z);
+            Vector3d tp(target_pose.pose.position.x, target_pose.pose.position.y, target_pose.pose.position.z);
+            if(!is_c_init)
+            {
+                orig << chaser_pose.pose.position.x, chaser_pose.pose.position.y, 0;
+                is_c_init = true;
+            }
+            //coef << 0.148335,1.09218,0.0613544,-0.0412182,0.00388845,-0.00010405,0.22479,-0.222852,0.0754835,0.0145157,-0.00187083,5.42643e-5;
+            if((orig-cp).norm()>0.01 && is_c_init && !is_moving)
+            {
+                t_move = ros::Time::now();
+                is_moving = true;
+            }
+            ros::Time now = ros::Time::now();
+            if((now-t_begin).toSec()>0.1 && is_c_init && t_move.toSec()>0 && is_chaser)
+            {
+                double dT = (now-t_move).toSec()*t_lm/4;
+                Matrix<double, 1, 6> t_p;
+                t_p << 1, dT, pow(dT, 2), pow(dT, 3), pow(dT, 4), pow(dT, 5);
+                Vector3d ccp(t_p*coef.segment<6>(0), t_p*coef.segment<6>(6), target_pose.pose.position.z);
+                Point hc, mc, tar;
+                hc.x = cp(0);
+                hc.y = cp(1);
+                hc.z = cp(2);
+                mc.x = ccp(0);
+                mc.y = ccp(1);
+                mc.z = ccp(2);
+                tar.x = tp(0);
+                tar.y = tp(1);
+                tar.z = tp(2);
+                ct_vis += edf_grid_ptr->getRayMin(hc, tar, 0.3);
+                cct_vis += edf_grid_ptr->getRayMin(mc, tar, 0.3);
+                cct_distance += (ccp-tp).norm();
+                ct_distance += (cp-tp).norm();
+                cd_count++;
+                cout<<"ct_dis: "<<ct_distance/cd_count<<", ct_vis: "<<ct_vis/cd_count<<endl;
+                cout<<"cct_distance: "<<cct_distance/cd_count<<", cct_vis: "<<cct_vis/cd_count<<endl;
+                t_begin = now;
+            }
+            */
         }
     }
 }
 
 void ObjectsHandler::compute_edf()
 {
+    float min, max;
+    min=10;
+    max=0;
     for(int ix=0; ix<edf_grid_ptr.get()->Nx; ix++)
         for(int iy=0; iy<edf_grid_ptr.get()->Ny; iy++)
             for(int iz=0; iz<edf_grid_ptr.get()->Nz; iz++)
@@ -215,7 +277,10 @@ void ObjectsHandler::compute_edf()
                 Point eval_pnt = edf_grid_ptr.get()->getCellPnt(Vector3i(ix, iy, iz));  
                 // query edf value from edf mapper                       
                 float dist_val = edf_ptr->getDistance(octomap::point3d(eval_pnt.x, eval_pnt.y, eval_pnt.z));
-
+                if(dist_val>max)
+                    max=dist_val;
+                if(dist_val<min)
+                    min=dist_val;
                 // edf value assign to homogenous grid  
                 edf_grid_ptr.get()->field_vals[ix][iy][iz] = dist_val;
 
@@ -230,7 +295,7 @@ void ObjectsHandler::compute_edf()
                     markers_edf.points.push_back(eval_pnt);
                     markers_edf.colors.push_back(color);                    
                 }
-            }    
+            }
 }
 
 void ObjectsHandler::publish() {pub_edf.publish(markers_edf);}
@@ -266,6 +331,17 @@ void ObjectsHandler::callback_chaser_control_pose(const geometry_msgs::PoseStamp
 {
     if(run_mode == 0 and is_path_solved) // is path solved in Wrapper::trigger_chasing
         chaser_pose = *chaser_control_pose;
+}
+
+void ObjectsHandler::callback_chaser(const visualization_msgs::Marker& traj)
+{
+    chaser_traj = traj;
+    for(int i = 0; i < 12; i++)
+        coef(i) = chaser_traj.points[i].z;
+    t_lm = chaser_traj.points[12].z;
+    is_chaser = true;
+    t_move = ros::Time::now();
+    cout<<"RECEIVED"<<endl;
 }
 
 vector<Point> ObjectsHandler::get_prediction_seq() {}
